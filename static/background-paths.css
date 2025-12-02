@@ -1,0 +1,188 @@
+/* Animated Background Paths - Vanilla CSS Version */
+
+.background-paths-container {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: -1;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+    background-size: 200% 200%;
+    animation: gradientShift 15s ease infinite;
+}
+
+.paths-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.15;
+}
+
+.animated-path {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    animation: pathDraw 20s linear infinite;
+}
+
+.animated-path:nth-child(2n) {
+    animation-delay: 1s;
+    animation-duration: 25s;
+}
+
+.animated-path:nth-child(3n) {
+    animation-delay: 2s;
+    animation-duration: 30s;
+}
+
+.animated-path:nth-child(4n) {
+    animation-delay: 3s;
+    animation-duration: 22s;
+}
+
+.animated-path:nth-child(5n) {
+    animation-delay: 4s;
+    animation-duration: 28s;
+}
+
+@keyframes pathDraw {
+    0% {
+        stroke-dashoffset: 1000;
+        opacity: 0.3;
+    }
+    50% {
+        stroke-dashoffset: 0;
+        opacity: 0.6;
+    }
+    100% {
+        stroke-dashoffset: -1000;
+        opacity: 0.3;
+    }
+}
+
+@keyframes gradientShift {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* Hero Title with Letter Animation */
+.hero-title {
+    font-size: clamp(3rem, 8vw, 6rem);
+    font-weight: 800;
+    margin-bottom: 2rem;
+    letter-spacing: -0.05em;
+    background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-title .letter {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(100px);
+    animation: letterReveal 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.hero-title .letter:nth-child(1) { animation-delay: 0.05s; }
+.hero-title .letter:nth-child(2) { animation-delay: 0.1s; }
+.hero-title .letter:nth-child(3) { animation-delay: 0.15s; }
+.hero-title .letter:nth-child(4) { animation-delay: 0.2s; }
+.hero-title .letter:nth-child(5) { animation-delay: 0.25s; }
+.hero-title .letter:nth-child(6) { animation-delay: 0.3s; }
+.hero-title .letter:nth-child(7) { animation-delay: 0.35s; }
+.hero-title .letter:nth-child(8) { animation-delay: 0.4s; }
+.hero-title .letter:nth-child(9) { animation-delay: 0.45s; }
+.hero-title .letter:nth-child(10) { animation-delay: 0.5s; }
+
+@keyframes letterReveal {
+    0% {
+        opacity: 0;
+        transform: translateY(100px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Glassmorphic Hero Button */
+.hero-button-wrapper {
+    display: inline-block;
+    position: relative;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(255,255,255,0.1));
+    padding: 1px;
+    border-radius: 1rem;
+    backdrop-filter: blur(16px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.hero-button-wrapper:hover {
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.hero-button {
+    padding: 1.5rem 3rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: calc(1rem - 1px);
+    color: #000;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(12px);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.hero-button:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: translateY(-2px);
+}
+
+.hero-button .arrow {
+    display: inline-block;
+    opacity: 0.7;
+    transition: all 0.3s ease;
+}
+
+.hero-button:hover .arrow {
+    opacity: 1;
+    transform: translateX(6px);
+}
+
+/* Content Container */
+.hero-content {
+    position: relative;
+    z-index: 10;
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+    opacity: 0;
+    animation: fadeInUp 2s ease forwards;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

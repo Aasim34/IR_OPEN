@@ -1,0 +1,11 @@
+Flask
+flask-cors
+scikit-learn
+numpy
+nltk
+sentence-transformers>=2.7.0
+torch
+PyPDF2
+Pillow
+PyMuPDF
+rank-bm25

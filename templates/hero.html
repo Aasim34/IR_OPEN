@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Background Paths Demo - Smart Notes Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='background-paths.css') }}">
+</head>
+<body>
+    <!-- Animated Background -->
+    <div id="backgroundPaths" class="background-paths-container"></div>
+
+    <!-- Hero Content -->
+    <div class="hero-content" style="min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+        <h1 id="heroTitle" class="hero-title">Smart Notes Search</h1>
+        
+        <p style="font-size: 1.5rem; color: #64748b; margin-bottom: 3rem; max-width: 600px;">
+            Search through your notes using TF-IDF & Semantic Similarity
+        </p>
+
+        <div class="hero-button-wrapper">
+            <button class="hero-button" onclick="window.location.href='/'">
+                <span>Discover Excellence</span>
+                <span class="arrow">→</span>
+            </button>
+        </div>
+
+        <div style="margin-top: 4rem; display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
+            <div style="text-align: center;">
+                <div style="font-size: 2.5rem; font-weight: bold; color: #667eea;">111</div>
+                <div style="color: #64748b;">Documents</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 2.5rem; font-weight: bold; color: #764ba2;">4</div>
+                <div style="color: #64748b;">Search Methods</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 2.5rem; font-weight: bold; color: #f093fb;">⚡</div>
+                <div style="color: #64748b;">Fast Results</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='background-paths.js') }}"></script>
+</body>
+</html>

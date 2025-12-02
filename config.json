@@ -1,0 +1,16 @@
+{
+  "max_pages_per_pdf": 20,
+  "max_images_per_pdf": 3,
+  "tfidf_max_features": 1000,
+  "hybrid_alpha": 0.5,
+  "use_stemming": true,
+  "use_lemmatization": false,
+  "enable_query_expansion": true,
+  "context_window": 150,
+  "search_methods": {
+    "tfidf": true,
+    "bm25": true,
+    "semantic": true,
+    "hybrid": true
+  }
+}

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Notes Search Engine</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='background-paths.css') }}">
+    <script src="{{ url_for('static', filename='animations.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='background-paths.js') }}" defer></script>
+</head>
+<body>
+    <!-- Animated Background Paths -->
+    <div id="backgroundPaths" class="background-paths-container"></div>
+
+    <div class="container">
+        <header>
+            <h1>🔍 Smart Notes Search Engine</h1>
+            <p class="subtitle">Search through your notes using TF-IDF & Semantic Similarity</p>
+            <div class="doc-count">
+                <span id="docCount">{{ doc_count }}</span> documents loaded
+                <button id="reloadBtn" class="reload-btn" title="Reload documents">↻</button>
+                <span id="animStatus" style="margin-left: 15px; font-size: 12px; color: #4ade80;"></span>
+            </div>
+        </header>
+
+        <div class="search-container">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Enter your search query..."
+                    autocomplete="off"
+                >
+                <button id="searchBtn" class="search-btn">Search</button>
+            </div>
+
+            <div class="filter-section">
+                <button id="filterBtn" class="filter-toggle-btn">
+                    📁 Filter by Files/Folders <span id="filterCount"></span>
+                </button>
+                <div id="filterPanel" class="filter-panel" style="display: none;">
+                    <div class="filter-header">
+                        <h4>Select Files or Folders to Search:</h4>
+                        <div class="filter-actions">
+                            <button id="clearFilters" class="filter-action-btn">Clear All</button>
+                            <button id="closeFilters" class="filter-action-btn">Done</button>
+                        </div>
+                    </div>
+                    <div class="filter-tabs">
+                        <button class="filter-tab active" data-tab="folders">Folders</button>
+                        <button class="filter-tab" data-tab="files">All Files</button>
+                    </div>
+                    <div id="foldersTab" class="filter-content active">
+                        <div id="foldersList" class="filter-list"></div>
+                    </div>
+                    <div id="filesTab" class="filter-content">
+                        <input type="text" id="fileSearchInput" placeholder="Search files..." class="filter-search">
+                        <div id="filesList" class="filter-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="search-options">
+                <label class="radio-label">
+                    <input type="radio" name="searchType" value="hybrid" checked>
+                    <span>🚀 Hybrid (Best Results)</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="searchType" value="bm25">
+                    <span>⚡ BM25 (Advanced Ranking)</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="searchType" value="tfidf">
+                    <span>📊 TF-IDF (Keyword Match)</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="searchType" value="semantic">
+                    <span>🧠 Semantic (Meaning-Based)</span>
+                </label>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Searching...</p>
+        </div>
+
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+
+        <div id="resultsContainer" class="results-container" style="display: none;">
+            <div class="results-header">
+                <h2>Search Results</h2>
+                <p id="resultsInfo"></p>
+            </div>
+            <div id="resultsList"></div>
+        </div>
+
+        <div class="info-box">
+            <h3>📚 How to use:</h3>
+            <ol>
+                <li>Add your PDF or text files to the <code>data/docs/</code> folder</li>
+                <li>Click the reload button (↻) to load new documents</li>
+                <li>Enter your search query and select a search method</li>
+                <li>View highlighted results with relevance scores</li>
+            </ol>
+            <div class="method-info">
+                <p><strong>🚀 Hybrid:</strong> Combines all methods for best accuracy (recommended)</p>
+                <p><strong>⚡ BM25:</strong> Advanced probabilistic ranking algorithm</p>
+                <p><strong>📊 TF-IDF:</strong> Classic keyword-based term weighting</p>
+                <p><strong>🧠 Semantic:</strong> AI-powered meaning and context understanding</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const reloadBtn = document.getElementById('reloadBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorMessage = document.getElementById('errorMessage');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const resultsList = document.getElementById('resultsList');
+        const resultsInfo = document.getElementById('resultsInfo');
+        const docCount = document.getElementById('docCount');
+        
+        // Filter elements
+        const filterBtn = document.getElementById('filterBtn');
+        const filterPanel = document.getElementById('filterPanel');
+        const closeFilters = document.getElementById('closeFilters');
+        const clearFilters = document.getElementById('clearFilters');
+        const filterCount = document.getElementById('filterCount');
+        const fileSearchInput = document.getElementById('fileSearchInput');
+        
+        let selectedFilters = [];
+        let allFiles = [];
+        let allFolders = [];
+
+        // Load files and folders on page load
+        loadFilesAndFolders();
+
+        // Filter panel toggle
+        filterBtn.addEventListener('click', () => {
+            filterPanel.style.display = filterPanel.style.display === 'none' ? 'block' : 'none';
+        });
+
+        closeFilters.addEventListener('click', () => {
+            filterPanel.style.display = 'none';
+        });
+
+        clearFilters.addEventListener('click', () => {
+            selectedFilters = [];
+            updateFilterDisplay();
+            loadFilesAndFolders();
+        });
+
+        // Tab switching
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.filter-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tabName + 'Tab').classList.add('active');
+            });
+        });
+
+        // File search
+        fileSearchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const fileItems = document.querySelectorAll('#filesList .filter-item');
+            fileItems.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(searchTerm) ? 'flex' : 'none';
+            });
+        });
+
+        async function loadFilesAndFolders() {
+            try {
+                const response = await fetch('/get_files');
+                const data = await response.json();
+                
+                allFiles = data.files || [];
+                allFolders = data.folders || [];
+                
+                renderFolders();
+                renderFiles();
+            } catch (error) {
+                console.error('Error loading files:', error);
+            }
+        }
+
+        function renderFolders() {
+            const foldersList = document.getElementById('foldersList');
+            foldersList.innerHTML = '';
+            
+            if (allFolders.length === 0) {
+                foldersList.innerHTML = '<p style="padding: 10px; color: #666;">No folders found</p>';
+                return;
+            }
+            
+            allFolders.forEach(folder => {
+                const item = createFilterItem(folder, '📁 ' + folder);
+                foldersList.appendChild(item);
+            });
+        }
+
+        function renderFiles() {
+            const filesList = document.getElementById('filesList');
+            filesList.innerHTML = '';
+            
+            if (allFiles.length === 0) {
+                filesList.innerHTML = '<p style="padding: 10px; color: #666;">No files found</p>';
+                return;
+            }
+            
+            allFiles.forEach(file => {
+                const item = createFilterItem(file, '📄 ' + file);
+                filesList.appendChild(item);
+            });
+        }
+
+        function createFilterItem(value, label) {
+            const item = document.createElement('div');
+            item.className = 'filter-item';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = value;
+            checkbox.checked = selectedFilters.includes(value);
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    selectedFilters.push(value);
+                } else {
+                    selectedFilters = selectedFilters.filter(f => f !== value);
+                }
+                updateFilterDisplay();
+            });
+            
+            const labelEl = document.createElement('label');
+            labelEl.textContent = label;
+            labelEl.style.cursor = 'pointer';
+            labelEl.addEventListener('click', () => {
+                checkbox.checked = !checkbox.checked;
+                checkbox.dispatchEvent(new Event('change'));
+            });
+            
+            item.appendChild(checkbox);
+            item.appendChild(labelEl);
+            
+            return item;
+        }
+
+        function updateFilterDisplay() {
+            if (selectedFilters.length > 0) {
+                filterCount.textContent = `(${selectedFilters.length})`;
+                filterCount.style.display = 'inline';
+            } else {
+                filterCount.style.display = 'none';
+            }
+        }
+
+        // Search on button click
+        searchBtn.addEventListener('click', performSearch);
+
+        // Search on Enter key
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+
+        // Reload documents
+        reloadBtn.addEventListener('click', reloadDocuments);
+
+        function getSelectedSearchType() {
+            const selected = document.querySelector('input[name="searchType"]:checked');
+            return selected ? selected.value : 'hybrid';
+        }
+
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            
+            if (!query) {
+                showError('Please enter a search query');
+                return;
+            }
+
+            const searchType = getSelectedSearchType();
+
+            // Show loading, hide results and errors
+            loadingIndicator.style.display = 'flex';
+            resultsContainer.style.display = 'none';
+            errorMessage.style.display = 'none';
+            searchBtn.disabled = true;
+
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        search_type: searchType,
+                        filter_files: selectedFilters
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Search failed');
+                }
+
+                displayResults(data);
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                loadingIndicator.style.display = 'none';
+                searchBtn.disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            if (data.results.length === 0) {
+                showError('No results found for your query');
+                return;
+            }
+
+            let filterInfo = '';
+            if (data.filter_files && data.filter_files.length > 0) {
+                filterInfo = ` (filtered to ${data.filter_files.length} location${data.filter_files.length > 1 ? 's' : ''})`;
+            }
+
+            resultsInfo.textContent = `Found ${data.total} result(s) for "${data.query}" using ${data.search_type} search${filterInfo}`;
+            resultsList.innerHTML = '';
+
+            data.results.forEach((result, index) => {
+                const resultCard = document.createElement('div');
+                resultCard.className = 'result-card';
+                
+                let scoreInfo = '';
+                if (data.search_type === 'hybrid' && result.tfidf_score !== undefined) {
+                    scoreInfo = `
+                        <div class="score-breakdown">
+                            <span class="score-badge main-score">Combined: ${(result.score * 100).toFixed(1)}%</span>
+                            <div class="score-details">
+                                <span class="score-detail">📊 TF-IDF: ${(result.tfidf_score * 100).toFixed(1)}%</span>
+                                <span class="score-detail">⚡ BM25: ${(result.bm25_score * 100).toFixed(1)}%</span>
+                                <span class="score-detail">🧠 Semantic: ${(result.semantic_score * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    const methodIcon = {
+                        'tfidf': '📊',
+                        'bm25': '⚡',
+                        'semantic': '🧠',
+                        'hybrid': '🚀'
+                    }[result.method] || '';
+                    scoreInfo = `
+                        <span class="score-badge">${methodIcon} ${(result.score * 100).toFixed(1)}%</span>
+                    `;
+                }
+
+                // Extract folder and file name
+                const pathParts = result.filename.split(/[\\\/]/);
+                const fileName = pathParts[pathParts.length - 1];
+                const folderPath = pathParts.slice(0, -1).join(' › ');
+                const fileIcon = result.file_type === 'PDF' ? '📄' : '📝';
+                
+                // Key points section
+                const keyPointsHtml = result.key_points && result.key_points.length > 0
+                    ? `<div class="result-section key-points-section">
+                        <h4 class="section-heading">📌 MATCHED CONCEPTS</h4>
+                        <ul class="key-points-list">
+                            ${result.key_points.map(point => `<li>${point}</li>`).join('')}
+                        </ul>
+                       </div>`
+                    : '';
+                
+                // Images section
+                const imagesHtml = result.images && result.images.length > 0
+                    ? `<div class="result-section images-section">
+                        <h4 class="section-heading">🖼️ FOUND IMAGES (${result.images.length})</h4>
+                        <div class="image-gallery">
+                            ${result.images.map(img => {
+                                // Handle both string (base64) and object {data: 'data:image...', page: 1} formats
+                                let imgSrc;
+                                if (typeof img === 'string') {
+                                    // Plain base64 string
+                                    imgSrc = img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
+                                } else if (img.data) {
+                                    // Object with data property (already has data:image prefix)
+                                    imgSrc = img.data;
+                                } else {
+                                    imgSrc = `data:image/png;base64,${img}`;
+                                }
+                                const pageInfo = img.page ? `Page ${img.page}` : '';
+                                return `
+                                <div class="image-item">
+                                    <img src="${imgSrc}" alt="Document image ${pageInfo}" loading="lazy">
+                                    ${pageInfo ? `<div class="image-page-label">${pageInfo}</div>` : ''}
+                                </div>
+                            `}).join('')}
+                        </div>
+                       </div>`
+                    : '';
+                
+                resultCard.innerHTML = `
+                    <div class="result-header">
+                        <div class="result-number-badge">#${index + 1}</div>
+                        <div class="result-title-section">
+                            <h3 class="result-title-main">
+                                ${fileIcon} ${escapeHtml(fileName)}
+                            </h3>
+                            <div class="result-score-line">
+                                🔢 Relevance Score: <span class="score-value">${(result.score * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="result-body">
+                        <div class="result-section summary-section">
+                            <h4 class="section-heading">📝 SUMMARY</h4>
+                            <p class="result-summary">${result.summary || result.snippet}</p>
+                        </div>
+                        
+                        ${keyPointsHtml}
+                        ${imagesHtml}
+                        
+                        <div class="result-section metadata-section">
+                            <h4 class="section-heading">📁 FILE INFORMATION</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <span class="meta-label">Folder:</span>
+                                    <span class="meta-value">${folderPath || 'Root'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <span class="meta-label">Type:</span>
+                                    <span class="meta-value">${result.file_type || 'Unknown'}</span>
+                                </div>
+                                ${result.file_size ? `
+                                <div class="metadata-item">
+                                    <span class="meta-label">Size:</span>
+                                    <span class="meta-value">${result.file_size}</span>
+                                </div>` : ''}
+                                ${result.modified_date ? `
+                                <div class="metadata-item">
+                                    <span class="meta-label">Modified:</span>
+                                    <span class="meta-value">${result.modified_date}</span>
+                                </div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                resultsList.appendChild(resultCard);
+            });
+
+            resultsContainer.style.display = 'block';
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            resultsContainer.style.display = 'none';
+        }
+
+        function formatSnippet(snippet) {
+            if (!snippet) return '';
+            
+            // Split by [...] markers
+            const segments = snippet.split(' [...] ');
+            
+            let formatted = segments.map(segment => {
+                // Clean up the segment
+                let cleaned = segment.trim();
+                
+                // Convert bullet point markers (•, -, *) at start of lines to HTML bullets
+                cleaned = cleaned.replace(/([.!?])\s*•\s*/g, '$1</li><li>• ');
+                cleaned = cleaned.replace(/^•\s*/g, '<li>• ');
+                
+                // Add line breaks for better readability
+                cleaned = cleaned.replace(/([.!?])\s+([A-Z])/g, '$1<br><br>$2');
+                
+                // Wrap in a segment div
+                return `<div class="snippet-segment">${cleaned}</div>`;
+            }).join('<div class="snippet-divider">• • •</div>');
+            
+            // Wrap bullet points if they exist
+            if (formatted.includes('<li>')) {
+                formatted = formatted.replace(/(<li>.*?<\/li>)+/gs, match => {
+                    return `<ul class="snippet-list">${match}</ul>`;
+                });
+            }
+            
+            return formatted;
+        }
+
+        async function reloadDocuments() {
+            reloadBtn.disabled = true;
+            reloadBtn.textContent = '⟳';
+            
+            try {
+                const response = await fetch('/reload', {
+                    method: 'POST',
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Reload failed');
+                }
+
+                docCount.textContent = data.doc_count;
+                
+                // Show success message briefly
+                const originalText = reloadBtn.textContent;
+                reloadBtn.textContent = '✓';
+                setTimeout(() => {
+                    reloadBtn.textContent = '↻';
+                }, 1500);
+            } catch (error) {
+                showError(error.message);
+                reloadBtn.textContent = '↻';
+            } finally {
+                reloadBtn.disabled = false;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatFileSize(bytes) {
+            if (!bytes) return 'N/A';
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            if (bytes === 0) return '0 Bytes';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        }
+        
+        function formatDate(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    </script>
+</body>
+</html>
