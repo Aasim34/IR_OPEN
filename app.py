@@ -977,6 +977,302 @@ def reload():
     except Exception as e:
         return jsonify({'error': f'Error reloading documents: {str(e)}'}), 500
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """Handle file upload"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Check file extension
+        allowed_extensions = {'.pdf', '.txt', '.doc', '.docx'}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({'error': f'File type {file_ext} not supported. Please upload PDF, TXT, DOC, or DOCX files'}), 400
+        
+        # Create uploads directory in data/docs
+        upload_dir = os.path.join(BASE_DIR, 'data', 'docs', 'uploads')
+        if not os.path.exists(upload_dir):
+            os.makedirs(upload_dir)
+        
+        # Save file with unique name if already exists
+        base_name = file.filename
+        file_path = os.path.join(upload_dir, base_name)
+        counter = 1
+        
+        while os.path.exists(file_path):
+            name, ext = os.path.splitext(base_name)
+            file_path = os.path.join(upload_dir, f"{name}_{counter}{ext}")
+            counter += 1
+        
+        # Save the file
+        file.save(file_path)
+        
+        # Process the uploaded file
+        try:
+            if file_ext == '.pdf':
+                text = extract_text_from_pdf(file_path)
+                if not text or len(text.strip()) < 50:
+                    os.remove(file_path)
+                    return jsonify({'error': 'Could not extract text from PDF. The file might be empty or image-based.'}), 400
+                images = extract_images_from_pdf(file_path)
+            elif file_ext == '.txt':
+                text = extract_text_from_txt(file_path)
+                images = []
+            elif file_ext in ['.doc', '.docx']:
+                # For DOC/DOCX, you would need python-docx library
+                # For now, return error or convert to text
+                return jsonify({'error': 'DOC/DOCX support coming soon. Please upload PDF or TXT files.'}), 400
+            else:
+                return jsonify({'error': 'Unsupported file type'}), 400
+            
+            if not text.strip():
+                os.remove(file_path)
+                return jsonify({'error': 'File appears to be empty'}), 400
+            
+            # Add to document collection
+            rel_path = os.path.join('uploads', os.path.basename(file_path))
+            documents.append(text)
+            doc_names.append(rel_path)
+            doc_images.append(images)
+            
+            # Rebuild indices
+            print(f"Rebuilding indices with {len(documents)} documents...")
+            
+            # Rebuild TF-IDF
+            global tfidf_vectorizer, tfidf_matrix, bm25_model, processed_docs, semantic_embeddings
+            tfidf_vectorizer = TfidfVectorizer(stop_words='english', max_features=CONFIG.get('tfidf_max_features', 1000))
+            tfidf_matrix = tfidf_vectorizer.fit_transform(documents)
+            
+            # Rebuild BM25
+            processed_docs = [preprocess_text_advanced(doc) for doc in documents]
+            bm25_model = BM25Okapi(processed_docs)
+            
+            # Rebuild semantic embeddings if available
+            if SEMANTIC_AVAILABLE and SEMANTIC_MODEL is not None:
+                try:
+                    semantic_embeddings = SEMANTIC_MODEL.encode(documents, show_progress_bar=False)
+                except Exception as e:
+                    print(f"Error building semantic embeddings: {e}")
+                    semantic_embeddings = None
+            
+            # Update cache
+            save_to_cache()
+            
+            # Update hash file
+            docs_path = os.path.join(BASE_DIR, 'data', 'docs')
+            current_hash = get_files_hash(docs_path)
+            with open(HASH_FILE, 'w') as f:
+                f.write(current_hash)
+            
+            return jsonify({
+                'message': 'File uploaded and indexed successfully',
+                'filename': os.path.basename(file_path),
+                'total_documents': len(documents)
+            }), 200
+            
+        except Exception as e:
+            # If processing fails, remove the file
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            return jsonify({'error': f'Error processing file: {str(e)}'}), 500
+        
+    except Exception as e:
+        return jsonify({'error': f'Upload error: {str(e)}'}), 500
+
+@app.route('/download/<path:filename>', methods=['GET'])
+def download_file(filename):
+    """Download or view a file"""
+    try:
+        # Construct the full file path
+        file_path = os.path.join(BASE_DIR, 'data', 'docs', filename)
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Security check: ensure the file is within the docs directory
+        docs_path = os.path.join(BASE_DIR, 'data', 'docs')
+        if not os.path.abspath(file_path).startswith(os.path.abspath(docs_path)):
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Send the file
+        return send_file(file_path, as_attachment=False)
+    except Exception as e:
+        return jsonify({'error': f'Error downloading file: {str(e)}'}), 500
+
+@app.route('/ai-chat', methods=['POST'])
+def ai_chat():
+    """AI-powered chat using search results"""
+    try:
+        data = request.json
+        query = data.get('query', '').strip()
+        search_results = data.get('search_results', [])
+        conversation_history = data.get('conversation_history', [])
+        
+        if not query:
+            return jsonify({'error': 'Please enter a query'}), 400
+        
+        # Extract relevant content from search results
+        context_parts = []
+        sources = []
+        
+        for i, result in enumerate(search_results[:5]):  # Top 5 results
+            context_parts.append(f"Document {i+1}: {result['filename']}")
+            context_parts.append(f"Content: {result.get('summary', '')}")
+            if result.get('key_points'):
+                context_parts.append("Key Points:")
+                for point in result['key_points'][:3]:
+                    # Remove HTML tags from points
+                    clean_point = re.sub(r'<[^>]+>', '', point)
+                    context_parts.append(f"- {clean_point}")
+            context_parts.append("")  # Empty line between documents
+            sources.append(result['filename'])
+        
+        context = "\n".join(context_parts)
+        
+        # Build conversation context
+        conversation_context = ""
+        if conversation_history:
+            for msg in conversation_history[-3:]:  # Last 3 messages
+                role = msg.get('role', 'user')
+                content = msg.get('content', '')
+                conversation_context += f"{role.upper()}: {content}\n"
+        
+        # Create a comprehensive prompt
+        prompt = f"""You are an AI assistant helping users understand information from their document collection.
+
+Previous conversation:
+{conversation_context if conversation_context else "No previous conversation"}
+
+Current question: {query}
+
+Relevant information from documents:
+{context}
+
+Based on the above information, provide a comprehensive, well-structured answer to the user's question. 
+
+Instructions:
+1. Start with a clear, direct answer to the question
+2. Include detailed information from ALL provided documents, not just the first one
+3. Organize the response with proper markdown formatting:
+   - Use ### for main headings with relevant emojis (📚, 📖, ✨, 🔗, 🎯)
+   - Use **bold** for emphasis
+   - Use bullet points (•) or numbered lists for clarity
+   - Add a summary section at the end
+4. Reference specific documents when citing information
+5. Synthesize information from multiple sources to provide a complete picture
+6. If information spans multiple documents, connect the concepts logically
+
+Keep your response clear, informative, engaging, and visually appealing with emojis and proper formatting."""
+
+        # Try to use OpenAI API if available, otherwise provide a structured response
+        try:
+            from openai import OpenAI
+            # Check if API key is set in environment
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key and not api_key.startswith('sk-proj-YOUR'):
+                client = OpenAI(api_key=api_key)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful AI assistant that answers questions based on provided document context. Format your responses using markdown with emojis for better readability."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1000
+                )
+                ai_response = response.choices[0].message.content
+            else:
+                raise Exception("OpenAI API key not set or invalid")
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            # Fallback: Generate a structured response from the context
+            ai_response = generate_fallback_response(query, search_results, context)
+        
+        return jsonify({
+            'response': ai_response,
+            'sources': sources[:5],
+            'context_used': len(search_results)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'AI chat error: {str(e)}'}), 500
+
+def generate_fallback_response(query, search_results, context):
+    """Generate a structured response when AI API is not available"""
+    if not search_results:
+        return f"""🔍 I searched through the document collection for information about **"{query}"**, but couldn't find any relevant documents.
+
+### 💡 Suggestions:
+• Try rephrasing your question
+• Use different keywords  
+• Check if documents related to this topic have been uploaded
+
+Would you like to try a different question? 🤔"""
+    
+    # Extract key information
+    top_result = search_results[0]
+    response_parts = []
+    
+    response_parts.append(f"### 📚 Based on your question about **'{query}'**\n")
+    
+    # Add comprehensive answer synthesized from top result
+    if top_result.get('summary'):
+        clean_summary = re.sub(r'<[^>]+>', '', top_result['summary'])
+        response_parts.append(f"### 📖 Main Information:")
+        response_parts.append(clean_summary)
+        response_parts.append("")
+    
+    # Add key points from primary document
+    if top_result.get('key_points'):
+        response_parts.append("### ✨ Key Points:")
+        for i, point in enumerate(top_result['key_points'][:5], 1):
+            clean_point = re.sub(r'<[^>]+>', '', point)
+            response_parts.append(f"**{i}.** {clean_point}")
+        response_parts.append("")
+    
+    # Add detailed information from other relevant sources (increased from 2 to 4 documents)
+    if len(search_results) > 1:
+        response_parts.append("### 🔗 Additional Context from Other Documents:\n")
+        for idx, result in enumerate(search_results[1:5], 1):  # Show up to 4 additional documents
+            response_parts.append(f"#### 📄 **{result['filename']}**")
+            
+            # Add full summary for better context
+            if result.get('summary'):
+                clean_summary = re.sub(r'<[^>]+>', '', result['summary'])
+                response_parts.append(f"{clean_summary}")
+                response_parts.append("")
+            
+            # Add key points from this document too
+            if result.get('key_points') and len(result['key_points']) > 0:
+                response_parts.append("**Key insights:**")
+                for point in result['key_points'][:3]:  # Top 3 points per document
+                    clean_point = re.sub(r'<[^>]+>', '', point)
+                    response_parts.append(f"• {clean_point}")
+                response_parts.append("")
+    
+    # Add a comprehensive summary section
+    response_parts.append("---\n")
+    response_parts.append("### 🎯 Summary:")
+    response_parts.append(f"This information is drawn from **{len(search_results)} relevant document(s)** in your collection. ")
+    response_parts.append(f"The primary source is *{top_result['filename']}*")
+    if len(search_results) > 1:
+        response_parts.append(f", with supporting information from {len(search_results) - 1} additional document(s).")
+    else:
+        response_parts.append(".")
+    response_parts.append("")
+    
+    response_parts.append("💬 *Feel free to ask follow-up questions or request more details about any specific aspect!*")
+    
+    return "\n".join(response_parts)
+
 @app.route('/hero')
 def hero():
     """Hero landing page with animated background paths"""
