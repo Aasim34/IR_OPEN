@@ -29,6 +29,11 @@ except LookupError:
     nltk.download('punkt')
 
 try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab')
+
+try:
     nltk.data.find('corpora/stopwords')
 except LookupError:
     nltk.download('stopwords')
@@ -46,7 +51,8 @@ CONFIG = {
 }
 
 # Try to load config.json if exists
-config_path = os.path.join(r'A:\IR', 'config.json')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(BASE_DIR, 'config.json')
 if os.path.exists(config_path):
     try:
         with open(config_path, 'r') as f:
@@ -83,7 +89,6 @@ bm25_model = None
 semantic_embeddings = None
 
 # Cache settings
-BASE_DIR = r'A:\IR'
 CACHE_FILE = os.path.join(BASE_DIR, 'document_cache.pkl')
 HASH_FILE = os.path.join(BASE_DIR, 'files_hash.txt')
 IMAGE_CACHE_DIR = os.path.join(BASE_DIR, 'extracted_images')
